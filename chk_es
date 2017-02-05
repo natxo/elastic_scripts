@@ -1,0 +1,146 @@
+#!/bin/bash
+
+es_plg_dir="/usr/share/elasticsearch"
+kbn_plg_dir="/usr/share/kibana"
+version="Version: 5.0.0"
+xpack_zip="/root/x-pack-5.0.0.zip"
+
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+#
+# FUNCTIONS
+# 
+##########################################################
+stop_es () {
+   /bin/systemctl --quiet is-active elasticsearch.service
+   if [ $? -ne 0 ] ; then
+      echo "elasticsearch not running"
+   else 
+      echo "stopping elasticsearch to upgrade plugins..."
+      /bin/systemctl stop elasticsearch
+   fi
+}
+
+start_es () {
+   /bin/systemctl --quiet is-active elasticsearch.service
+   if [ $? -ne 0 ] ; then
+      echo "elasticsearch not running"
+      /bin/systemctl start elasticsearch
+      echo "starting elasticsearch now"
+   else 
+      echo "elasticsearch already running"
+   fi
+}
+
+stop_kbn () {
+   /bin/systemctl --quiet is-active kibana.service
+   if [ $? -ne 0 ] ; then
+      echo "kibana not running"
+   else 
+      echo "stopping kibana to upgrade plugins..."
+      /bin/systemctl stop kibana
+   fi
+}
+
+start_kbn () {
+   /bin/systemctl --quiet is-active kibana.service
+   if [ $? -ne 0 ] ; then
+      echo "kibana not running"
+      /bin/systemctl start kibana
+      echo "starting kibana now"
+   else 
+      echo "kibana already running"
+   fi
+}
+
+go_to_es_plg_dir () {
+    while [ $PWD != $es_plg_dir ]; do
+        cd $es_plg_dir
+    done
+}
+
+go_to_kb_plg_dir () {
+    while [ $PWD != $kbn_plg_dir ]; do
+        cd $kbn_plg_dir
+    done
+}
+
+rmv_es_plg () {
+    bin/elasticsearch-plugin remove $1
+}
+
+rmv_kb_plg () {
+    bin/kibana-plugin remove $1
+}
+
+get_rmv_es_plgs () {
+    # save the result of the command in an array
+    readarray -t array_es < <(bin/elasticsearch-plugin list)
+
+    nr_plgn_es=${#array_es[@]}
+
+    for ((i=0; i<=$nr_plgn_es; ++i ))  do
+        if [ ! -z ${array_es[$i]} ]; then
+            echo "Plugin found: ${array_es[$i]}. Uninstalling ${array_es[$i]}"
+            rmv_es_plg ${array_es[i]}
+        else
+            echo "no elasticsearch plugins to remove, moving on..."
+        fi
+    done
+}
+
+get_rmv_kbn_plgs () {
+    # save the result of the command in an array
+    readarray -t array_kbn < <(bin/kibana-plugin list)
+
+    nr_plgn_kbn=${#array_kbn[@]}
+
+    for ((i=0; i<=$nr_plgn_kbn; ++i ))  do
+        if [ ! -z ${array_kbn[$i]} ]; then
+            echo "Plugin found: ${array_kbn[$i]}. Uninstalling ${array_kbn[$i]}"
+            str=${array_kbn[i]}
+            # strip @x.x.x from str
+            str=${str/@*/}
+            #rmv_kb_plg ${array_kbn[i]}
+            rmv_kb_plg $str
+        else
+            echo "no kibana plugins to remove, moving on..."
+        fi
+    done
+}
+
+instll_plg_es (){
+    bin/elasticsearch-plugin install $1 --batch
+}
+
+instll_plg_kbn (){
+    bin/kibana-plugin install $1
+}
+
+##########################################################
+#
+# END FUNCTIONS
+#
+##########################################################
+
+stop_es
+go_to_es_plg_dir
+get_rmv_es_plgs
+
+instll_plg_es "file://$xpack_zip"
+if [ $? -ne 0 ] ; then
+    echo "something went wrong install plugin $xpack_zip"
+else 
+    echo "Installation $xpack_zip successful"
+fi
+start_es
+
+stop_kbn
+go_to_kb_plg_dir
+get_rmv_kbn_plgs
+instll_plg_kbn "file://$xpack_zip"
+if [ $? -ne 0 ] ; then
+    echo "something went wrong install plugin $xpack_zip"
+else 
+    echo "Installation $xpack_zip successful"
+fi
+start_kbn
